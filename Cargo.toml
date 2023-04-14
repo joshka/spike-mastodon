@@ -13,7 +13,9 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 futures-util = "0.3"
-mastodon-async = { version = "1.2", features = ["toml"] }
+mastodon-async = { version = "1.2", features = [
+  "toml",
+], git = "https://github.com/joshka/mastodon-async", branch = "spans-and-page-auth" }
 tokio = { version = "1", features = [
   "macros",
   "rt-multi-thread",
@@ -29,5 +31,3 @@ tracing-log = "0.1"
 valuable = "0.1"
 webbrowser = "0.8"
 xdg = "2.4"
-[patch.crates-io]
-mastodon-async = { path = "../mastodon-async" }

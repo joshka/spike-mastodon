@@ -652,6 +652,7 @@ dependencies = [
 [[package]]
 name = "mastodon-async"
 version = "1.2.1"
+source = "git+https://github.com/joshka/mastodon-async?branch=spans-and-page-auth#54e5e111489e9c742af14ebce404ddef494d0ce7"
 dependencies = [
  "derive_deref",
  "derive_is_enum_variant",
@@ -683,6 +684,7 @@ dependencies = [
 [[package]]
 name = "mastodon-async-entities"
 version = "1.2.1"
+source = "git+https://github.com/joshka/mastodon-async?branch=spans-and-page-auth#54e5e111489e9c742af14ebce404ddef494d0ce7"
 dependencies = [
  "derive_is_enum_variant",
  "futures",
