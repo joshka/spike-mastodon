@@ -1,5 +1,3 @@
-use std::{fs::File, io};
-
 use anyhow::{Context, Result};
 use mastodon_async::helpers::toml;
 use mastodon_async::page::Page;
@@ -7,6 +5,10 @@ use mastodon_async::prelude::Status;
 use mastodon_async::registration::Registered;
 use mastodon_async::{helpers, scopes::Scopes, Registration};
 use mastodon_async::{Data, Mastodon};
+use std::{
+    fs::File,
+    io::{self, BufRead, Write},
+};
 use tracing::subscriber;
 use tracing::{error, info, metadata::LevelFilter};
 use tracing_subscriber::prelude::*;
@@ -42,7 +44,8 @@ async fn run() -> Result<()> {
         Ok(data) => Mastodon::from(data),
         Err(error) => {
             info!(?error, "No credentials found, registering");
-            let registration = register().await?;
+            let server_name = get_server_name()?;
+            let registration = register(server_name).await?;
             let mastodon = authenticate(registration).await?;
             save_credentials(&mastodon).await?;
             mastodon
@@ -68,8 +71,23 @@ fn load_credentials() -> Result<Data> {
     Ok(data)
 }
 
-async fn register() -> Result<Registered> {
-    let registration = Registration::new("https://hachyderm.io")
+fn get_server_name() -> Result<String> {
+    let mut stdout = io::stdout().lock();
+    let mut stdin = io::stdin().lock();
+
+    writeln!(&mut stdout, "Enter server name:").context("failed to write to stdout")?;
+    stdout.flush().context("failed to flush stdout")?;
+
+    let mut input = String::new();
+    stdin
+        .read_line(&mut input)
+        .context("failed to read input")?;
+
+    Ok(input.trim().to_string())
+}
+
+async fn register(server_name: String) -> Result<Registered> {
+    let registration = Registration::new(server_name)
         .client_name("joshka-mastodon-async")
         .redirect_uris("urn:ietf:wg:oauth:2.0:oob")
         .scopes(Scopes::read_all())
