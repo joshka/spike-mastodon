@@ -1,3 +1,11 @@
+#![warn(
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::cargo
+)]
+
 use anyhow::{Context, Result};
 use mastodon_async::helpers::toml;
 use mastodon_async::page::Page;
@@ -19,10 +27,10 @@ async fn main() -> Result<()> {
     let file = File::create("logfile.json")?;
     let (non_blocking, _guard) = tracing_appender::non_blocking(file);
     let filter = EnvFilter::default()
-        .add_directive("hyper=info".parse().unwrap())
-        .add_directive("reqwest=info".parse().unwrap())
-        .add_directive("mastodon_async=trace".parse().unwrap())
-        .add_directive("info".parse().unwrap());
+        .add_directive("hyper=info".parse()?)
+        .add_directive("reqwest=info".parse()?)
+        .add_directive("mastodon_async=trace".parse()?)
+        .add_directive("info".parse()?);
     let file_layer = fmt::layer()
         .json()
         .with_writer(non_blocking)
@@ -47,7 +55,7 @@ async fn run() -> Result<()> {
             let server_name = get_server_name()?;
             let registration = register(server_name).await?;
             let mastodon = authenticate(registration).await?;
-            save_credentials(&mastodon).await?;
+            save_credentials(&mastodon)?;
             mastodon
         }
     };
@@ -83,7 +91,7 @@ fn get_server_name() -> Result<String> {
         .read_line(&mut input)
         .context("failed to read input")?;
 
-    Ok(input.trim().to_string())
+    Ok(input.trim().to_owned())
 }
 
 async fn register(server_name: String) -> Result<Registered> {
@@ -120,7 +128,7 @@ async fn verify_credentials(client: &Mastodon) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-async fn save_credentials(client: &Mastodon) -> Result<()> {
+fn save_credentials(client: &Mastodon) -> Result<()> {
     let path = xdg::BaseDirectories::with_prefix("spike-mastodon")
         .context("cannot open config folder")?
         .place_config_file("credentials.toml")
