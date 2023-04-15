@@ -31,5 +31,8 @@ valuable = "0.1"
 webbrowser = "0.8.9"
 xdg = "2.4.1"
 
+# for -Zminimal-versions
+openssl = "0.10.38"
+
 [patch.crates-io]
 mastodon-async = { git = "https://github.com/joshka/mastodon-async", branch = "spans-and-page-auth" }
