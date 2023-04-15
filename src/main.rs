@@ -7,12 +7,15 @@
 )]
 
 use anyhow::{Context, Result};
+use directories::ProjectDirs;
 use mastodon_async::helpers::toml;
 use mastodon_async::page::Page;
 use mastodon_async::prelude::Status;
 use mastodon_async::registration::Registered;
 use mastodon_async::{helpers, scopes::Scopes, Registration};
 use mastodon_async::{Data, Mastodon};
+use std::fs::create_dir_all;
+use std::path::PathBuf;
 use std::{
     fs::File,
     io::{self, BufRead, Write},
@@ -50,8 +53,8 @@ async fn main() -> Result<()> {
 async fn run() -> Result<()> {
     let mastodon = match load_credentials() {
         Ok(data) => Mastodon::from(data),
-        Err(error) => {
-            info!(?error, "No credentials found, registering");
+        Err(reason) => {
+            info!(%reason, "No credentials found. This is fine if you're running this for the first time.");
             let server_name = get_server_name()?;
             let registration = register(server_name).await?;
             let mastodon = authenticate(registration).await?;
@@ -71,12 +74,23 @@ async fn run() -> Result<()> {
 }
 
 fn load_credentials() -> Result<Data> {
-    let path = xdg::BaseDirectories::with_prefix("spike-mastodon")
-        .context("cannot open config folder")?
-        .find_config_file("credentials.toml")
-        .context("cannot find config file")?;
-    let data = toml::from_file(path).context("cannot load file")?;
+    let path = config_folder()?.join("credentials.toml");
+    let data = toml::from_file(&path).with_context(|| format!("cannot load file {path:?}"))?;
     Ok(data)
+}
+
+fn save_credentials(client: &Mastodon) -> Result<()> {
+    let folder = config_folder()?;
+    create_dir_all(folder.clone()).context("Can't create config folder")?;
+    let path = folder.join("credentials.toml");
+    toml::to_file(&client.data, &path).with_context(|| format!("cannot save file {path:?}"))?;
+    Ok(())
+}
+
+fn config_folder() -> Result<PathBuf> {
+    let project_dirs = ProjectDirs::from("com", "joshka", "mastodon-async")
+        .context("Couldn't determine config folder path")?;
+    Ok(project_dirs.config_dir().into())
 }
 
 fn get_server_name() -> Result<String> {
@@ -125,15 +139,6 @@ async fn verify_credentials(client: &Mastodon) -> Result<(), anyhow::Error> {
         .await
         .context("Couldn't get account")?;
     info!(?account, "verified credentials");
-    Ok(())
-}
-
-fn save_credentials(client: &Mastodon) -> Result<()> {
-    let path = xdg::BaseDirectories::with_prefix("spike-mastodon")
-        .context("cannot open config folder")?
-        .place_config_file("credentials.toml")
-        .context("cannot place config file")?;
-    toml::to_file(&client.data, &path).with_context(|| format!("cannot save file {path:?}"))?;
     Ok(())
 }
 
