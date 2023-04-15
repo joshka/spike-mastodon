@@ -30,9 +30,14 @@ jobs:
       # https://twitter.com/jonhoo/status/1571290371124260865
       - name: cargo test --locked
         run: cargo test --locked --all-features --all-targets
+        env:
+          RUSTFLAGS: --cfg tracing_unstable
       # https://github.com/rust-lang/cargo/issues/6669
       - name: cargo test --doc
         run: cargo test --locked --all-features --doc
+        env:
+          RUSTFLAGS: --cfg tracing_unstable
+
   minimal:
     runs-on: ubuntu-latest
     name: ubuntu / stable / minimal-versions
@@ -50,6 +55,8 @@ jobs:
         run: cargo +nightly update -Zminimal-versions
       - name: cargo test
         run: cargo test --locked --all-features --all-targets
+        env:
+          RUSTFLAGS: --cfg tracing_unstable
   os-check:
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.os }} / stable
@@ -68,6 +75,8 @@ jobs:
         run: cargo generate-lockfile
       - name: cargo test
         run: cargo test --locked --all-features --all-targets
+        env:
+          RUSTFLAGS: --cfg tracing_unstable
   coverage:
     runs-on: ubuntu-latest
     name: ubuntu / stable / coverage

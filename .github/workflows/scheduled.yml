@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    - cron:  '7 7 * * *'
+    - cron: "7 7 * * *"
 # Spend CI time only on latest ref: https://github.com/jonhoo/rust-ci-conf/pull/5
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -27,6 +27,9 @@ jobs:
         run: cargo generate-lockfile
       - name: cargo test --locked
         run: cargo test --locked --all-features --all-targets
+        env:
+          RUSTFLAGS: --cfg tracing_unstable
+
   # https://twitter.com/alcuadrado/status/1571291687837732873
   update:
     runs-on: ubuntu-latest
@@ -49,4 +52,4 @@ jobs:
         if: hashFiles('Cargo.lock') != ''
         run: cargo test --locked --all-features --all-targets
         env:
-          RUSTFLAGS: -D deprecated
+          RUSTFLAGS: -D deprecated --cfg tracing_unstable
