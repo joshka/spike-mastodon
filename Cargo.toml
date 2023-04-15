@@ -12,11 +12,9 @@ rust-version = "1.65"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0"
+anyhow = "1.0.4"
 futures-util = "0.3"
-mastodon-async = { version = "1.2", features = [
-  "toml",
-], git = "https://github.com/joshka/mastodon-async", branch = "spans-and-page-auth" }
+mastodon-async = { version = "1.2.1", features = ["toml"] }
 tokio = { version = "1", features = [
   "macros",
   "rt-multi-thread",
@@ -25,10 +23,13 @@ tokio = { version = "1", features = [
   "time",
   "tracing",
 ] }
-tracing = { version = "0.1", features = ["valuable"] }
+tracing = { version = "0.1.36", features = ["valuable"] }
 tracing-appender = "0.2"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3.10", features = ["env-filter", "json"] }
 tracing-log = "0.1"
 valuable = "0.1"
-webbrowser = "0.8"
-xdg = "2.4"
+webbrowser = "0.8.9"
+xdg = "2.4.1"
+
+[patch.crates-io]
+mastodon-async = { git = "https://github.com/joshka/mastodon-async", branch = "spans-and-page-auth" }
