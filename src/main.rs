@@ -64,6 +64,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[instrument(err, ret)]
 async fn run() -> Result<()> {
     let mastodon = match load_credentials() {
         Ok(data) => Mastodon::from(data),
@@ -87,12 +88,14 @@ async fn run() -> Result<()> {
     Ok(())
 }
 
+#[instrument(err, ret)]
 fn load_credentials() -> Result<Data> {
     let path = config_folder()?.join("credentials.toml");
     let data = toml::from_file(&path).with_context(|| format!("cannot load file {path:?}"))?;
     Ok(data)
 }
 
+#[instrument(err, ret)]
 fn save_credentials(client: &Mastodon) -> Result<()> {
     let folder = config_folder()?;
     create_dir_all(folder.clone()).context("Can't create config folder")?;
@@ -101,12 +104,14 @@ fn save_credentials(client: &Mastodon) -> Result<()> {
     Ok(())
 }
 
+#[instrument(err, ret)]
 fn config_folder() -> Result<PathBuf> {
     let project_dirs = ProjectDirs::from("com", "joshka", "mastodon-async")
         .context("Couldn't determine config folder path")?;
     Ok(project_dirs.config_dir().into())
 }
 
+#[instrument(err, ret)]
 fn get_server_name() -> Result<String> {
     let mut stdout = io::stdout().lock();
     let mut stdin = io::stdin().lock();
@@ -122,6 +127,7 @@ fn get_server_name() -> Result<String> {
     Ok(input.trim().to_owned())
 }
 
+#[instrument(err, ret)]
 async fn register(server_name: String) -> Result<Registered> {
     let registration = Registration::new(server_name)
         .client_name("joshka-mastodon-async")
@@ -135,6 +141,7 @@ async fn register(server_name: String) -> Result<Registered> {
     Ok(registration)
 }
 
+#[instrument(err, ret)]
 async fn authenticate(registration: Registered) -> Result<Mastodon> {
     let url = registration
         .authorize_url()
@@ -147,6 +154,7 @@ async fn authenticate(registration: Registered) -> Result<Mastodon> {
     Ok(client)
 }
 
+#[instrument(err, ret)]
 async fn verify_credentials(client: &Mastodon) -> Result<(), anyhow::Error> {
     let account = client
         .verify_credentials()
@@ -156,6 +164,7 @@ async fn verify_credentials(client: &Mastodon) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+#[instrument(err, ret)]
 async fn get_home_timeline(client: &Mastodon) -> Result<Page<Status>> {
     let timeline = client
         .get_home_timeline()
@@ -165,6 +174,7 @@ async fn get_home_timeline(client: &Mastodon) -> Result<Page<Status>> {
     Ok(timeline)
 }
 
+#[instrument]
 fn get_initial_items(timeline: &mut Page<Status>) {
     let items: Vec<String> = timeline
         .initial_items
@@ -175,6 +185,7 @@ fn get_initial_items(timeline: &mut Page<Status>) {
     info!(?items, "initial items");
 }
 
+#[instrument(err, ret)]
 async fn get_next_page(timeline: &mut Page<Status>) -> Result<()> {
     let items: Vec<String> = timeline
         .next_page()
@@ -188,6 +199,7 @@ async fn get_next_page(timeline: &mut Page<Status>) -> Result<()> {
     Ok(())
 }
 
+#[instrument(err, ret)]
 async fn get_prev_page(timeline: &mut Page<Status>) -> Result<()> {
     let items: Vec<String> = timeline
         .prev_page()
