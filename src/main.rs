@@ -20,29 +20,43 @@ use std::{
     fs::File,
     io::{self, BufRead, Write},
 };
-use tracing::subscriber;
+use tracing::instrument;
 use tracing::{error, info, metadata::LevelFilter};
 use tracing_subscriber::prelude::*;
-use tracing_subscriber::{fmt, EnvFilter, Layer, Registry};
+use tracing_subscriber::{fmt, EnvFilter, Layer};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let file = File::create("logfile.json")?;
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file);
-    let filter = EnvFilter::default()
+    let json_filter = EnvFilter::default()
         .add_directive("hyper=info".parse()?)
         .add_directive("reqwest=info".parse()?)
         .add_directive("mastodon_async=trace".parse()?)
         .add_directive("info".parse()?);
-    let file_layer = fmt::layer()
+    let json_file = File::create("logfile.json")?;
+    let (json_writer, _json_guard) = tracing_appender::non_blocking(json_file);
+    let json_layer = fmt::layer()
         .json()
-        .with_writer(non_blocking)
-        .with_filter(filter);
+        .with_writer(json_writer)
+        .with_filter(json_filter);
+
+    let txt_filter = EnvFilter::default()
+        .add_directive("hyper=info".parse()?)
+        .add_directive("reqwest=info".parse()?)
+        .add_directive("mastodon_async=trace".parse()?)
+        .add_directive("info".parse()?);
+    let txt_file = File::create("logfile.txt")?;
+    let (txt_writer, _guard) = tracing_appender::non_blocking(txt_file);
+    let txt_layer = fmt::layer().with_writer(txt_writer).with_filter(txt_filter);
+
     let stderr_layer = fmt::layer()
         .with_writer(io::stderr)
         .with_filter(LevelFilter::INFO);
-    let subscriber = Registry::default().with(file_layer).with(stderr_layer);
-    subscriber::set_global_default(subscriber).context("Couldn't set subscriber")?;
+
+    tracing_subscriber::registry()
+        .with(json_layer)
+        .with(txt_layer)
+        .with(stderr_layer)
+        .init();
 
     if let Err(err) = run().await {
         error!(?err, "error");
