@@ -20,51 +20,74 @@ use std::{
     fs::File,
     io::{self, BufRead, Write},
 };
-use tracing::instrument;
-use tracing::{error, info, metadata::LevelFilter};
+use tracing::{debug, instrument, warn};
+use tracing::{error, info};
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_log::LogTracer;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter, Layer};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let json_filter = EnvFilter::default()
-        .add_directive("hyper=info".parse()?)
-        .add_directive("reqwest=info".parse()?)
-        .add_directive("mastodon_async=trace".parse()?)
-        .add_directive("info".parse()?);
-    let json_file = File::create("logfile.json")?;
-    let (json_writer, _json_guard) = tracing_appender::non_blocking(json_file);
-    let json_layer = fmt::layer()
-        .json()
-        .with_writer(json_writer)
-        .with_filter(json_filter);
-
-    let txt_filter = EnvFilter::default()
-        .add_directive("hyper=info".parse()?)
-        .add_directive("reqwest=info".parse()?)
-        .add_directive("mastodon_async=trace".parse()?)
-        .add_directive("info".parse()?);
-    let txt_file = File::create("logfile.txt")?;
-    let (txt_writer, _guard) = tracing_appender::non_blocking(txt_file);
-    let txt_layer = fmt::layer().with_writer(txt_writer).with_filter(txt_filter);
-
-    let stderr_layer = fmt::layer()
-        .with_writer(io::stderr)
-        .with_filter(LevelFilter::INFO);
-
-    tracing_subscriber::registry()
-        .with(json_layer)
-        .with(txt_layer)
-        .with(stderr_layer)
-        .init();
-
+    let (_json_guard, _txt_guard) = setup_logging()?;
+    info!("Starting spike-mastodon");
     if let Err(err) = run().await {
         error!(?err, "error");
     }
     Ok(())
 }
 
-#[instrument(err, ret)]
+/// Setup tracing for the application. This includes the following:
+/// - a JSON log file
+/// - a text log file
+/// - logging to stderr
+/// - sending logs from the log crate to tracing subscribers
+///
+/// A real app would probably choose only one of these
+fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
+    // handle logs from the log crate by forwarding them to tracing
+    LogTracer::init()?;
+
+    let json_file = File::create("logfile.json")?;
+    let (json_writer, json_guard) = tracing_appender::non_blocking(json_file);
+    let json_layer = fmt::layer()
+        .json()
+        .with_writer(json_writer)
+        .with_filter(create_filter()?);
+
+    let txt_file = File::create("logfile.txt")?;
+    let (txt_writer, txt_guard) = tracing_appender::non_blocking(txt_file);
+
+    let txt_layer = fmt::layer()
+        .with_writer(txt_writer)
+        .with_filter(create_filter()?);
+
+    let stderr_layer = fmt::layer().with_writer(io::stderr).with_filter(
+        EnvFilter::default()
+            .add_directive("spike_mastodon=trace".parse()?)
+            .add_directive("info".parse()?),
+    );
+
+    let subscriber = tracing_subscriber::registry()
+        .with(json_layer)
+        .with(txt_layer)
+        .with(stderr_layer);
+
+    tracing::subscriber::set_global_default(subscriber)
+        .context("setting default subscriber failed")?;
+
+    Ok((json_guard, txt_guard))
+}
+
+fn create_filter() -> Result<EnvFilter> {
+    let filter = EnvFilter::default()
+        .add_directive("mastodon_async=trace".parse()?)
+        .add_directive("spike_mastodon=trace".parse()?)
+        .add_directive("info".parse()?);
+    Ok(filter)
+}
+
+#[instrument(err)]
 async fn run() -> Result<()> {
     let mastodon = match load_credentials() {
         Ok(data) => Mastodon::from(data),
@@ -78,24 +101,20 @@ async fn run() -> Result<()> {
         }
     };
     verify_credentials(&mastodon).await?;
-    let mut timeline = get_home_timeline(&mastodon).await?;
-    get_initial_items(&mut timeline);
-    get_next_page(&mut timeline).await?;
-    get_next_page(&mut timeline).await?;
-    get_next_page(&mut timeline).await?;
-    get_prev_page(&mut timeline).await?;
+
+    show_timeline(&mastodon).await?;
 
     Ok(())
 }
 
-#[instrument(err, ret)]
+#[instrument(err)]
 fn load_credentials() -> Result<Data> {
     let path = config_folder()?.join("credentials.toml");
     let data = toml::from_file(&path).with_context(|| format!("cannot load file {path:?}"))?;
     Ok(data)
 }
 
-#[instrument(err, ret)]
+#[instrument(skip_all, err)]
 fn save_credentials(client: &Mastodon) -> Result<()> {
     let folder = config_folder()?;
     create_dir_all(folder.clone()).context("Can't create config folder")?;
@@ -127,9 +146,9 @@ fn get_server_name() -> Result<String> {
     Ok(input.trim().to_owned())
 }
 
-#[instrument(err, ret)]
+#[instrument(err)]
 async fn register(server_name: String) -> Result<Registered> {
-    let registration = Registration::new(server_name)
+    let registered = Registration::new(server_name)
         .client_name("joshka-mastodon-async")
         .redirect_uris("urn:ietf:wg:oauth:2.0:oob")
         .scopes(Scopes::read_all())
@@ -137,11 +156,13 @@ async fn register(server_name: String) -> Result<Registered> {
         .build()
         .await
         .context("Couldn't register app")?;
-    info!(?registration, "registration complete");
-    Ok(registration)
+    let (base, client_id, _client_secret, _redirect, scopes, _force_login) =
+        registered.clone().into_parts();
+    info!(base, client_id, %scopes, "registration complete");
+    Ok(registered)
 }
 
-#[instrument(err, ret)]
+#[instrument(skip_all, err)]
 async fn authenticate(registration: Registered) -> Result<Mastodon> {
     let url = registration
         .authorize_url()
@@ -150,65 +171,103 @@ async fn authenticate(registration: Registered) -> Result<Mastodon> {
     let client = helpers::cli::authenticate(registration)
         .await
         .context("Couldn't authenticate")?;
-    info!(?client.data, "authenticated");
+    info!("authentication succeeded");
     Ok(client)
 }
 
-#[instrument(err, ret)]
+#[instrument(skip_all, err)]
 async fn verify_credentials(client: &Mastodon) -> Result<(), anyhow::Error> {
     let account = client
         .verify_credentials()
         .await
         .context("Couldn't get account")?;
-    info!(?account, "verified credentials");
+    info!(acct = account.acct,  id = %account.id, name = account.display_name, "verified credentials");
     Ok(())
 }
 
-#[instrument(err, ret)]
-async fn get_home_timeline(client: &Mastodon) -> Result<Page<Status>> {
+#[instrument(name = "home", skip_all, err)]
+async fn show_timeline(client: &Mastodon) -> Result<()> {
+    let mut timeline = load_home_timeline(client).await?;
+    // log the initial page links
+    log_page_links(&timeline);
+
+    // intentionally load the previous page while we're at the first page to
+    // check that the behavior of the page object doesn't dead-end at the
+    // beginning. This should not fail, but it also should not update the page
+    // links
+    load_prev_page(&mut timeline).await?;
+    // this should log the same as the initial page links
+    log_page_links(&timeline);
+
+    // moving to the next page should load the next page and update the page
+    // links
+    load_next_page(&mut timeline).await?;
+    // this should log two different links
+    log_page_links(&timeline);
+
+    // this should move back to the initial page
+    load_prev_page(&mut timeline).await?;
+    // this should log the same as the initial page links
+    log_page_links(&timeline);
+
+    Ok(())
+}
+
+#[instrument(name = "initial", skip_all, err)]
+async fn load_home_timeline(client: &Mastodon) -> Result<Page<Status>> {
     let timeline = client
         .get_home_timeline()
         .await
         .context("Couldn't get timeline")?;
-    info!("got timeline");
+    info!("loaded initial page of home timeline");
+    for item in &timeline.initial_items {
+        debug!(uri = %item.uri);
+    }
     Ok(timeline)
 }
 
-#[instrument]
-fn get_initial_items(timeline: &mut Page<Status>) {
-    let items: Vec<String> = timeline
-        .initial_items
-        .clone()
-        .into_iter()
-        .map(|status| status.uri)
-        .collect();
-    info!(?items, "initial items");
-}
-
-#[instrument(err, ret)]
-async fn get_next_page(timeline: &mut Page<Status>) -> Result<()> {
-    let items: Vec<String> = timeline
+#[instrument(name = "next_page", skip_all, err)]
+async fn load_next_page(timeline: &mut Page<Status>) -> Result<()> {
+    let url = timeline.next.clone().context("no next page")?;
+    let page = timeline
         .next_page()
         .await
-        .context("Couldn't get next page")?
-        .unwrap_or_default()
-        .into_iter()
-        .map(|status| status.uri)
-        .collect();
-    info!(?items, "next items");
+        .context("Couldn't get next page")?;
+    info!(%url, "loaded next page");
+    log_page_items(page);
     Ok(())
 }
 
-#[instrument(err, ret)]
-async fn get_prev_page(timeline: &mut Page<Status>) -> Result<()> {
-    let items: Vec<String> = timeline
+#[instrument(name = "prev_page", skip_all, err)]
+async fn load_prev_page(timeline: &mut Page<Status>) -> Result<()> {
+    let url = timeline.prev.clone().context("no prev page")?;
+    let page = timeline
         .prev_page()
         .await
-        .context("Couldn't get prev page")?
-        .unwrap_or_default()
-        .into_iter()
-        .map(|status| status.uri)
-        .collect();
-    info!(?items, "prev items");
+        .context("Couldn't get prev page")?;
+    info!(%url, "loaded prev page");
+    log_page_items(page);
     Ok(())
+}
+
+fn log_page_items(page: Option<Vec<Status>>) {
+    page.map_or_else(
+        || warn!("the page loaded successfully, but there is no data"),
+        |items| {
+            for item in items {
+                debug!(uri = %item.uri);
+            }
+        },
+    );
+}
+
+/// This exists because there was an issue with the way that the previous and
+/// next pages were loaded when going to the previous page at the beginning or
+/// the next page at the end.
+fn log_page_links(page: &Page<Status>) {
+    debug!(
+        prev = page.prev.as_ref().map_or("None", |u| u.as_str()),
+        next = page.next.as_ref().map_or("None", |u| u.as_str()),
+        "page links"
+    );
 }

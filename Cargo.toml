@@ -35,4 +35,5 @@ webbrowser = "0.8.9"
 openssl = "0.10.38"
 
 [patch.crates-io]
-mastodon-async = { git = "https://github.com/joshka/mastodon-async", branch = "spans-and-page-auth" }
+mastodon-async = { git = "https://github.com/joshka/mastodon-async", branch = "fix-paging" }
+#mastodon-async = { path = "../mastodon-async" }
