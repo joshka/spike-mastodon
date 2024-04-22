@@ -29,7 +29,7 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3.10", features = ["env-filter", "json"] }
 tracing-log = "0.1"
 valuable = "0.1"
-webbrowser = "0.8.9"
+webbrowser = "1.0.0"
 
 # for -Zminimal-versions
 openssl = "0.10.60"
